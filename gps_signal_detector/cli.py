@@ -145,6 +145,29 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_interface(args: argparse.Namespace) -> int:
+    """Interface graphique dans le navigateur."""
+    from .ble_scanner import ScannerUnavailable
+    from .web_ui import run_web
+
+    try:
+        return run_web(
+            demo=args.demo,
+            adapter=args.adapter,
+            restart_scan_s=args.restart_scan,
+            host=args.host,
+            port=args.port,
+            seed=args.seed,
+            open_browser=not args.no_browser,
+        )
+    except ScannerUnavailable as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"Impossible d'ouvrir le port {args.port} : {exc}", file=sys.stderr)
+        return 2
+
+
 def cmd_traque(args: argparse.Namespace) -> int:
     """Traque temps réel : le signal monte quand on se rapproche."""
     from .ble_scanner import ScannerUnavailable
@@ -373,6 +396,30 @@ def build_parser() -> argparse.ArgumentParser:
     add_db_option(scan)
     add_output_options(scan)
     scan.set_defaults(func=cmd_scan)
+
+    interface = subparsers.add_parser(
+        "interface",
+        help="interface graphique dans le navigateur (la plus simple à lire)",
+    )
+    interface.add_argument(
+        "--demo", action="store_true", help="scénario simulé, sans matériel Bluetooth"
+    )
+    interface.add_argument("--adapter", help="adaptateur Bluetooth (ex. hci0)")
+    interface.add_argument("--port", type=int, default=8765)
+    interface.add_argument("--host", default="127.0.0.1", help="par défaut, la machine seule")
+    interface.add_argument(
+        "--no-browser", action="store_true", help="n'ouvre pas le navigateur tout seul"
+    )
+    interface.add_argument(
+        "--restart-scan",
+        type=float,
+        default=0.0,
+        metavar="SECONDES",
+        help="relance le scan périodiquement ; à activer si la page signale "
+        "que le suivi en direct ne fonctionne pas",
+    )
+    interface.add_argument("--seed", type=int, default=42)
+    interface.set_defaults(func=cmd_interface)
 
     traque = subparsers.add_parser(
         "traque",

@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Détecteur de traceurs</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --plane:      #f9f9f7;
+  --surface:    #fcfcfb;
+  --ink:        #0b0b0b;
+  --ink-2:      #52514e;
+  --muted:      #898781;
+  --grid:       #e1e0d9;
+  --baseline:   #c3c2b7;
+  --hairline:   rgba(11,11,11,0.10);
+  --calme:      #2a78d6;
+  --attention:  #fab219;
+  --critique:   #d03b3b;
+  --neutre:     #f0efec;
+  --serie:      #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --plane:    #0d0d0d;
+    --surface:  #1a1a19;
+    --ink:      #ffffff;
+    --ink-2:    #c3c2b7;
+    --muted:    #898781;
+    --grid:     #2c2c2a;
+    --baseline: #383835;
+    --hairline: rgba(255,255,255,0.10);
+    --calme:    #3987e5;
+    --neutre:   #383835;
+    --serie:    #3987e5;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#app { max-width: 46rem; margin: 0 auto; padding: 1.25rem 1rem 4rem; }
+
+/* ---------- En-tête ---------- */
+header { display: flex; align-items: center; justify-content: space-between;
+         gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+h1 { font-size: 1.25rem; margin: 0; letter-spacing: -0.01em; }
+.etat-ecoute { display: flex; align-items: center; gap: .5rem;
+               color: var(--ink-2); font-size: .875rem; }
+.pastille { width: .6rem; height: .6rem; border-radius: 50%;
+            background: var(--calme); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .pastille { animation: none; } }
+
+.resume { color: var(--ink-2); font-size: .95rem; margin: 0 0 1rem; }
+
+/* ---------- Bandeau d'avertissement ---------- */
+.avertissement {
+  background: var(--surface); border: 1px solid var(--hairline);
+  border-left: 4px solid var(--attention);
+  border-radius: 10px; padding: .9rem 1rem; margin-bottom: 1.25rem;
+}
+.avertissement strong { display: block; margin-bottom: .25rem; }
+.avertissement p { margin: 0; color: var(--ink-2); font-size: .9rem; }
+.avertissement code { background: var(--neutre); padding: .1rem .35rem;
+                      border-radius: 4px; font-size: .85em; }
+
+/* ---------- Cartes de la liste ---------- */
+.carte {
+  width: 100%; text-align: left; font: inherit; color: inherit;
+  background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: 12px; padding: 1rem 2.4rem 1rem 1.1rem; margin-bottom: .75rem;
+  cursor: pointer; display: block; position: relative;
+  transition: border-color .15s, transform .15s;
+}
+/* Un chevron : sans lui, rien ne dit que la carte s'ouvre. */
+.carte::after {
+  content: "›"; position: absolute; right: 1.1rem; top: 50%;
+  transform: translateY(-50%); color: var(--muted);
+  font-size: 1.7rem; line-height: 1;
+}
+.carte:hover { border-color: var(--baseline); }
+.carte:hover::after { color: var(--ink-2); }
+.carte:active { transform: scale(.995); }
+.carte:focus-visible { outline: 2px solid var(--calme); outline-offset: 2px; }
+.carte.muet { opacity: .55; }
+
+.carte-haut { display: flex; align-items: baseline; justify-content: space-between;
+              gap: .75rem; margin-bottom: .1rem; flex-wrap: wrap; }
+.carte-nom { font-weight: 600; font-size: 1.05rem; display: flex;
+             align-items: center; gap: .5rem; }
+.carte-type { color: var(--muted); font-size: .85rem; margin-bottom: .7rem; }
+
+.etiquette { font-size: .8rem; font-weight: 600; padding: .2rem .6rem;
+             border-radius: 999px; white-space: nowrap;
+             border: 1px solid currentColor; }
+.etiquette.calme     { color: var(--calme); }
+.etiquette.attention { color: #8a5d00; }
+.etiquette.critique  { color: var(--critique); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .etiquette.attention { color: var(--attention); }
+}
+
+.icone { flex: none; }
+
+/* ---------- Jauge ---------- */
+.jauge { height: 12px; border-radius: 6px; overflow: hidden; position: relative; }
+.jauge .remplissage { height: 100%; border-radius: 0 4px 4px 0;
+                      transition: width .35s ease, background-color .35s ease; }
+.jauge.calme     { background: color-mix(in srgb, var(--calme) 14%, transparent); }
+.jauge.attention { background: color-mix(in srgb, var(--attention) 18%, transparent); }
+.jauge.critique  { background: color-mix(in srgb, var(--critique) 14%, transparent); }
+.jauge.calme     .remplissage { background: var(--calme); }
+.jauge.attention .remplissage { background: var(--attention); }
+.jauge.critique  .remplissage { background: var(--critique); }
+
+.jauge-ligne { display: flex; align-items: center; gap: .75rem; }
+.jauge-ligne .jauge { flex: 1; }
+.pourcent { font-variant-numeric: tabular-nums; color: var(--ink-2);
+            font-size: .9rem; min-width: 2.8rem; text-align: right; }
+
+.alerte { margin: .7rem 0 0; font-size: .875rem; color: var(--ink-2);
+          display: flex; gap: .45rem; align-items: flex-start; }
+
+/* ---------- Vue recherche ---------- */
+.retour { background: none; border: none; color: var(--ink-2); font: inherit;
+          cursor: pointer; padding: .4rem 0; margin-bottom: .5rem;
+          display: flex; align-items: center; gap: .4rem; }
+.retour:hover { color: var(--ink); }
+
+.bloc { background: var(--surface); border: 1px solid var(--hairline);
+        border-radius: 14px; padding: 1.4rem; margin-bottom: 1rem; }
+
+.cible-nom { font-size: 1.3rem; font-weight: 600; margin: 0 0 .15rem; }
+.cible-type { color: var(--muted); font-size: .875rem; margin: 0 0 1.4rem; }
+
+.hero { text-align: center; margin-bottom: 1.2rem; }
+.hero-chiffre { font-size: 4.5rem; line-height: 1; font-weight: 650;
+                letter-spacing: -0.03em; }
+.hero-chiffre .unite { font-size: 1.75rem; font-weight: 500; color: var(--muted); }
+.hero-proximite { font-size: 1.35rem; font-weight: 600; margin-top: .35rem;
+                  display: flex; align-items: center; justify-content: center; gap: .5rem; }
+.hero-indice { color: var(--muted); font-size: .875rem; margin-top: .2rem; }
+.hero.calme     .hero-chiffre { color: var(--calme); }
+.hero.attention .hero-chiffre { color: #8a5d00; }
+.hero.critique  .hero-chiffre { color: var(--critique); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hero.attention .hero-chiffre { color: var(--attention); }
+}
+
+.jauge-large { height: 22px; border-radius: 11px; }
+
+.tendance { display: flex; align-items: center; justify-content: center;
+            gap: .6rem; padding: .9rem 1rem; border-radius: 10px;
+            font-size: 1.1rem; font-weight: 600; margin-top: 1.2rem;
+            border: 1px solid var(--hairline); }
+.tendance.chaud  { background: color-mix(in srgb, var(--critique) 12%, transparent);
+                   color: var(--critique); }
+.tendance.froid  { background: color-mix(in srgb, var(--calme) 12%, transparent);
+                   color: var(--calme); }
+.tendance.stable { background: var(--neutre); color: var(--ink-2); }
+.fleche { font-size: 1.3rem; line-height: 1; }
+
+/* ---------- Graphique ---------- */
+.titre-bloc { font-size: .95rem; font-weight: 600; margin: 0 0 .2rem; }
+.sous-titre { font-size: .82rem; color: var(--muted); margin: 0 0 .9rem; }
+.graphe { width: 100%; height: 150px; display: block; touch-action: none; }
+.info-bulle { position: absolute; pointer-events: none; background: var(--surface);
+              border: 1px solid var(--baseline); border-radius: 8px;
+              padding: .35rem .6rem; font-size: .82rem; white-space: nowrap;
+              box-shadow: 0 4px 14px rgba(0,0,0,.12); opacity: 0; transition: opacity .1s; }
+.graphe-enveloppe { position: relative; }
+
+/* ---------- Bouton principal ---------- */
+.bouton { width: 100%; font: inherit; font-size: 1.05rem; font-weight: 600;
+          padding: 1rem; border-radius: 12px; cursor: pointer;
+          background: var(--ink); color: var(--plane); border: none;
+          display: flex; align-items: center; justify-content: center; gap: .5rem; }
+.bouton:hover { opacity: .88; }
+.bouton:focus-visible { outline: 2px solid var(--calme); outline-offset: 2px; }
+.bouton.secondaire { background: none; color: var(--ink-2);
+                     border: 1px solid var(--baseline); margin-top: .6rem;
+                     font-size: .92rem; padding: .7rem; }
+
+.points { list-style: none; padding: 0; margin: 1rem 0 0;
+          display: flex; flex-wrap: wrap; gap: .5rem; }
+.points li { background: var(--neutre); border-radius: 8px; padding: .45rem .7rem;
+             font-size: .9rem; font-variant-numeric: tabular-nums; }
+.points li.fort { background: color-mix(in srgb, var(--critique) 15%, transparent);
+                  color: var(--critique); font-weight: 600; }
+
+.note { font-size: .85rem; color: var(--muted); margin: 1rem 0 0; line-height: 1.5; }
+.message { font-size: .9rem; margin: .8rem 0 0; padding: .6rem .8rem;
+           border-radius: 8px; background: var(--neutre); color: var(--ink-2); }
+.message.probleme { background: color-mix(in srgb, var(--attention) 18%, transparent);
+                    color: var(--ink); }
+
+details { margin-top: 1rem; }
+summary { cursor: pointer; color: var(--ink-2); font-size: .9rem; padding: .4rem 0; }
+summary:focus-visible { outline: 2px solid var(--calme); outline-offset: 2px; }
+.table-technique { width: 100%; border-collapse: collapse; font-size: .875rem;
+                   margin-top: .5rem; }
+.table-technique th { text-align: left; font-weight: 500; color: var(--muted);
+                      padding: .35rem .6rem .35rem 0; white-space: nowrap; }
+.table-technique td { padding: .35rem 0; font-variant-numeric: tabular-nums;
+                      color: var(--ink-2); }
+
+.vide { text-align: center; color: var(--muted); padding: 3.5rem 1rem; }
+.vide .grand { font-size: 2.5rem; display: block; margin-bottom: .6rem; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Détecteur de traceurs</h1>
+    <div class="etat-ecoute"><span class="pastille"></span><span id="ecoute">Écoute en cours</span></div>
+  </header>
+
+  <!-- ========== Vue liste ========== -->
+  <main id="vue-liste">
+    <p class="resume" id="resume">Démarrage du scan…</p>
+    <div id="avertissement"></div>
+    <div id="liste"></div>
+  </main>
+
+  <!-- ========== Vue recherche ========== -->
+  <main id="vue-recherche" hidden>
+    <button class="retour" id="retour">← Retour à la liste</button>
+
+    <div class="bloc">
+      <h2 class="cible-nom" id="cible-nom"></h2>
+      <p class="cible-type" id="cible-type"></p>
+
+      <div class="hero" id="hero">
+        <div class="hero-chiffre"><span id="hero-chiffre">—</span><span class="unite"> %</span></div>
+        <div class="hero-proximite"><span class="icone" id="hero-icone"></span><span id="hero-proximite"></span></div>
+        <div class="hero-indice" id="hero-indice"></div>
+      </div>
+
+      <div class="jauge jauge-large" id="jauge-cible">
+        <div class="remplissage" id="jauge-remplissage" style="width:0%"></div>
+      </div>
+
+      <div class="tendance" id="tendance">
+        <span class="fleche" id="tendance-fleche"></span>
+        <span id="tendance-texte">Mesure en cours…</span>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <p class="titre-bloc">Force du signal, dernière minute</p>
+      <p class="sous-titre">La courbe monte quand vous vous rapprochez.</p>
+      <div class="graphe-enveloppe">
+        <svg class="graphe" id="graphe" viewBox="0 0 600 150" preserveAspectRatio="none"
+             role="img" aria-label="Évolution du signal sur la dernière minute"></svg>
+        <div class="info-bulle" id="info-bulle"></div>
+      </div>
+    </div>
+
+    <div class="bloc">
+      <p class="titre-bloc">Repérer l'endroit</p>
+      <p class="sous-titre">
+        Déplacez-vous, puis marquez un point à chaque endroit. Le point le plus
+        fort vous indique la zone à fouiller.
+      </p>
+      <button class="bouton" id="marquer">Marquer cet endroit</button>
+      <p class="message" id="message" hidden></p>
+      <ul class="points" id="points"></ul>
+      <button class="bouton secondaire" id="reinitialiser">Tout effacer et recommencer</button>
+
+      <p class="note">
+        <strong>À savoir :</strong> l'appareil ne donne aucune direction — il est
+        impossible de savoir s'il est à gauche ou à droite. Seule la force du
+        signal renseigne, et uniquement par sa variation quand vous bougez. Les
+        distances affichées sont des ordres de grandeur, pas des mesures.
+      </p>
+
+      <details>
+        <summary>Détails techniques</summary>
+        <table class="table-technique">
+          <tbody id="table-technique"></tbody>
+        </table>
+      </details>
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+
+const ICONES = { calme: "○", attention: "◐", critique: "●" };
+const FLECHES = { chaud: "▲", froid: "▼", stable: "■" };
+
+let etat = null;
+let cible = null;
+let survol = null;
+
+const $ = (id) => document.getElementById(id);
+
+async function rafraichir() {
+  try {
+    const reponse = await fetch("/api/etat", { cache: "no-store" });
+    etat = await reponse.json();
+    $("ecoute").textContent = etat.ecoute ? "Écoute en cours" : "Arrêté";
+    rendre();
+  } catch (e) {
+    $("ecoute").textContent = "Connexion perdue";
+  }
+}
+
+function appareilCible() {
+  if (!etat || !cible) return null;
+  return etat.appareils.find((a) => a.id === cible) || null;
+}
+
+function rendre() {
+  const actif = appareilCible();
+  $("vue-liste").hidden = !!actif;
+  $("vue-recherche").hidden = !actif;
+  if (actif) rendreRecherche(actif); else rendreListe();
+}
+
+/* ---------------- Liste ---------------- */
+
+function rendreListe() {
+  const n = etat.total, t = etat.traceurs;
+  $("resume").textContent = n === 0
+    ? "Aucun appareil détecté pour l'instant. Patientez quelques secondes…"
+    : `${n} appareil${n > 1 ? "s" : ""} autour de vous · ${t} traceur${t > 1 ? "s" : ""} identifié${t > 1 ? "s" : ""}`;
+
+  const zone = $("avertissement");
+  zone.innerHTML = "";
+  if (etat.avertissement) {
+    const bloc = document.createElement("div");
+    bloc.className = "avertissement";
+    const titre = document.createElement("strong");
+    titre.textContent = "⚠ " + etat.avertissement.titre;
+    const texte = document.createElement("p");
+    texte.textContent = etat.avertissement.texte;
+    bloc.append(titre, texte);
+    zone.append(bloc);
+  }
+
+  const liste = $("liste");
+  liste.innerHTML = "";
+  if (!etat.appareils.length) {
+    liste.innerHTML = '<div class="vide"><span class="grand">📡</span>Recherche d\'appareils Bluetooth…</div>';
+    return;
+  }
+
+  for (const appareil of etat.appareils) {
+    const carte = document.createElement("button");
+    carte.className = "carte" + (appareil.muet ? " muet" : "");
+    carte.type = "button";
+    carte.setAttribute(
+      "aria-label",
+      `${appareil.nom}, ${appareil.proximite}, signal ${appareil.signal ?? 0} %. Ouvrir la recherche.`
+    );
+
+    const haut = document.createElement("div");
+    haut.className = "carte-haut";
+    const nom = document.createElement("span");
+    nom.className = "carte-nom";
+    const icone = document.createElement("span");
+    icone.className = "icone";
+    icone.textContent = appareil.traceur ? "⚠" : "";
+    nom.append(icone, document.createTextNode(appareil.nom));
+    const etiquette = document.createElement("span");
+    etiquette.className = "etiquette " + appareil.severite;
+    etiquette.textContent = appareil.muet ? "Silencieux" : appareil.proximite;
+    haut.append(nom, etiquette);
+
+    const type = document.createElement("div");
+    type.className = "carte-type";
+    type.textContent = appareil.type;
+
+    const ligne = document.createElement("div");
+    ligne.className = "jauge-ligne";
+    ligne.append(construireJauge(appareil), construirePourcent(appareil));
+
+    carte.append(haut, type, ligne);
+
+    if (appareil.alerte) {
+      const alerte = document.createElement("p");
+      alerte.className = "alerte";
+      const puce = document.createElement("span");
+      puce.textContent = "⚠";
+      alerte.append(puce, document.createTextNode(appareil.alerte));
+      carte.append(alerte);
+    }
+
+    carte.addEventListener("click", () => { cible = appareil.id; survol = null; rendre(); });
+    liste.append(carte);
+  }
+}
+
+function construireJauge(appareil) {
+  const jauge = document.createElement("div");
+  jauge.className = "jauge " + appareil.severite;
+  const remplissage = document.createElement("div");
+  remplissage.className = "remplissage";
+  remplissage.style.width = (appareil.signal ?? 0) + "%";
+  jauge.append(remplissage);
+  return jauge;
+}
+
+function construirePourcent(appareil) {
+  const valeur = document.createElement("span");
+  valeur.className = "pourcent";
+  valeur.textContent = appareil.signal === null ? "—" : appareil.signal + " %";
+  return valeur;
+}
+
+/* ---------------- Recherche ---------------- */
+
+function rendreRecherche(appareil) {
+  $("cible-nom").textContent = appareil.nom;
+  $("cible-type").textContent = appareil.type;
+
+  $("hero").className = "hero " + appareil.severite;
+  $("hero-chiffre").textContent = appareil.signal === null ? "—" : appareil.signal;
+  $("hero-icone").textContent = ICONES[appareil.severite] || "";
+  $("hero-proximite").textContent = appareil.muet ? "Plus de signal" : appareil.proximite;
+  $("hero-indice").textContent = appareil.muet
+    ? "L'appareil ne répond plus. Rapprochez-vous ou patientez."
+    : (appareil.indice || "");
+
+  $("jauge-cible").className = "jauge jauge-large " + appareil.severite;
+  $("jauge-remplissage").style.width = (appareil.signal ?? 0) + "%";
+
+  const tendance = appareil.tendance;
+  $("tendance").className = "tendance " + tendance.sens;
+  $("tendance-fleche").textContent = FLECHES[tendance.sens] || "";
+  $("tendance-texte").textContent = tendance.texte;
+
+  dessinerGraphe(appareil.historique);
+  rendrePoints(appareil.points);
+  rendreTechnique(appareil.technique);
+}
+
+function rendrePoints(points) {
+  const liste = $("points");
+  liste.innerHTML = "";
+  if (!points.length) return;
+  const meilleur = Math.max(...points.map((p) => p.signal ?? 0));
+  let marque = false;
+  for (const point of points) {
+    const item = document.createElement("li");
+    const fort = !marque && (point.signal ?? 0) === meilleur;
+    if (fort) marque = true;
+    item.className = fort ? "fort" : "";
+    item.textContent = `Point ${point.n} · ${point.signal ?? "—"} %` + (fort ? "  ← le plus fort" : "");
+    liste.append(item);
+  }
+}
+
+function rendreTechnique(technique) {
+  const lignes = [
+    ["Identifiant", technique.identifiant],
+    ["Puissance mesurée", technique.puissance_dbm === null ? "—" : technique.puissance_dbm + " dBm"],
+    ["Mesures reçues", technique.mesures],
+    ["Cadence", technique.cadence + " par seconde"],
+    ["Batterie annoncée", technique.batterie || "non communiquée"],
+    ["Famille détectée", technique.famille || "inconnue"],
+  ];
+  const corps = $("table-technique");
+  corps.innerHTML = "";
+  for (const [nom, valeur] of lignes) {
+    const tr = document.createElement("tr");
+    const th = document.createElement("th");
+    th.textContent = nom;
+    const td = document.createElement("td");
+    td.textContent = valeur;
+    tr.append(th, td);
+    corps.append(tr);
+  }
+}
+
+/* ---------------- Graphique ---------------- */
+
+const LARGEUR = 600, HAUTEUR = 150, MARGE_H = 8, MARGE_B = 22;
+
+function dessinerGraphe(historique) {
+  const svg = $("graphe");
+  svg.textContent = "";
+  const ns = "http://www.w3.org/2000/svg";
+  const utile = HAUTEUR - MARGE_B - MARGE_H;
+  const x = (i) => (i / Math.max(1, historique.length - 1)) * (LARGEUR - 12) + 6;
+  const y = (v) => MARGE_H + utile - (v / 100) * utile;
+
+  // Grille : trois repères discrets, jamais en pointillés.
+  for (const niveau of [0, 50, 100]) {
+    const ligne = document.createElementNS(ns, "line");
+    ligne.setAttribute("x1", 0); ligne.setAttribute("x2", LARGEUR);
+    ligne.setAttribute("y1", y(niveau)); ligne.setAttribute("y2", y(niveau));
+    ligne.setAttribute("stroke", "var(--grid)");
+    ligne.setAttribute("stroke-width", "1");
+    ligne.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.append(ligne);
+  }
+
+  // Échelle : sans elle, on ne sait pas ce que vaut la hauteur de la courbe.
+  // La graduation haute se pose sous sa ligne, sinon elle sort du cadre.
+  for (const [niveau, decalage] of [[100, 11], [0, -4]]) {
+    const graduation = document.createElementNS(ns, "text");
+    graduation.setAttribute("x", 4);
+    graduation.setAttribute("y", y(niveau) + decalage);
+    graduation.setAttribute("fill", "var(--muted)");
+    graduation.setAttribute("font-size", "10");
+    graduation.textContent = niveau + " %";
+    svg.append(graduation);
+  }
+
+  // Segments : une coupure quand l'appareil s'est réellement tu.
+  let segment = [];
+  const segments = [];
+  historique.forEach((valeur, i) => {
+    if (valeur === null) { if (segment.length) segments.push(segment); segment = []; }
+    else segment.push([x(i), y(valeur)]);
+  });
+  if (segment.length) segments.push(segment);
+
+  for (const points of segments) {
+    if (points.length < 2) continue;
+    const trace = document.createElementNS(ns, "path");
+    trace.setAttribute("d", "M" + points.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" L"));
+    trace.setAttribute("fill", "none");
+    trace.setAttribute("stroke", "var(--serie)");
+    trace.setAttribute("stroke-width", "2");
+    trace.setAttribute("stroke-linejoin", "round");
+    trace.setAttribute("stroke-linecap", "round");
+    trace.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.append(trace);
+  }
+
+  // Point courant : un anneau de la couleur du fond le détache du tracé.
+  const dernier = segments.length ? segments[segments.length - 1].slice(-1)[0] : null;
+  if (dernier) {
+    const anneau = document.createElementNS(ns, "circle");
+    anneau.setAttribute("cx", dernier[0]); anneau.setAttribute("cy", dernier[1]);
+    anneau.setAttribute("r", "6");
+    anneau.setAttribute("fill", "var(--surface)");
+    svg.append(anneau);
+    const point = document.createElementNS(ns, "circle");
+    point.setAttribute("cx", dernier[0]); point.setAttribute("cy", dernier[1]);
+    point.setAttribute("r", "4.5");
+    point.setAttribute("fill", "var(--serie)");
+    svg.append(point);
+  }
+
+  for (const [position, texte] of [[6, "il y a 1 min"], [LARGEUR - 6, "maintenant"]]) {
+    const label = document.createElementNS(ns, "text");
+    label.setAttribute("x", position);
+    label.setAttribute("y", HAUTEUR - 6);
+    label.setAttribute("fill", "var(--muted)");
+    label.setAttribute("font-size", "11");
+    label.setAttribute("text-anchor", position < 100 ? "start" : "end");
+    label.textContent = texte;
+    svg.append(label);
+  }
+
+  if (survol !== null && historique[survol] !== null && historique[survol] !== undefined) {
+    const trait = document.createElementNS(ns, "line");
+    trait.setAttribute("x1", x(survol)); trait.setAttribute("x2", x(survol));
+    trait.setAttribute("y1", MARGE_H); trait.setAttribute("y2", HAUTEUR - MARGE_B);
+    trait.setAttribute("stroke", "var(--baseline)");
+    trait.setAttribute("stroke-width", "1");
+    trait.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.append(trait);
+  }
+}
+
+const svgGraphe = $("graphe");
+svgGraphe.addEventListener("pointermove", (evenement) => {
+  const appareil = appareilCible();
+  if (!appareil) return;
+  const cadre = svgGraphe.getBoundingClientRect();
+  const ratio = (evenement.clientX - cadre.left) / cadre.width;
+  const index = Math.round(ratio * (appareil.historique.length - 1));
+  survol = Math.max(0, Math.min(appareil.historique.length - 1, index));
+  const valeur = appareil.historique[survol];
+  const bulle = $("info-bulle");
+  if (valeur === null || valeur === undefined) { bulle.style.opacity = 0; return; }
+  const secondes = Math.round((1 - survol / (appareil.historique.length - 1)) * 60);
+  bulle.textContent = `${valeur} %  ·  il y a ${secondes} s`;
+  bulle.style.opacity = 1;
+  bulle.style.left = Math.min(cadre.width - 120, Math.max(0, evenement.clientX - cadre.left - 55)) + "px";
+  bulle.style.top = "4px";
+  dessinerGraphe(appareil.historique);
+});
+svgGraphe.addEventListener("pointerleave", () => {
+  survol = null;
+  $("info-bulle").style.opacity = 0;
+  const appareil = appareilCible();
+  if (appareil) dessinerGraphe(appareil.historique);
+});
+
+/* ---------------- Actions ---------------- */
+
+$("retour").addEventListener("click", () => { cible = null; survol = null; rendre(); });
+
+let minuteurMessage = null;
+
+function afficherMessage(texte, probleme = false) {
+  const zone = $("message");
+  zone.textContent = texte;
+  zone.className = "message" + (probleme ? " probleme" : "");
+  zone.hidden = false;
+  clearTimeout(minuteurMessage);
+  minuteurMessage = setTimeout(() => { zone.hidden = true; }, 4000);
+}
+
+async function envoyer(chemin) {
+  if (!cible) return;
+  const reponse = await fetch(chemin, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: cible }),
+  });
+  const donnees = await reponse.json().catch(() => ({}));
+
+  if (chemin === "/api/marquer") {
+    // Un marquage peut échouer si l'appareil n'a rien émis récemment :
+    // le dire, plutôt que de laisser le bouton sans effet visible.
+    if (donnees.ok) afficherMessage(`Endroit enregistré à ${donnees.signal} %.`);
+    else afficherMessage(
+      "Aucune mesure assez récente pour marquer cet endroit. " +
+      "Patientez que l'appareil réémette, puis réessayez.", true);
+  } else if (chemin === "/api/reinitialiser") {
+    afficherMessage("Repères effacés. Vous repartez de zéro.");
+  }
+  rafraichir();
+}
+
+$("marquer").addEventListener("click", () => envoyer("/api/marquer"));
+$("reinitialiser").addEventListener("click", () => envoyer("/api/reinitialiser"));
+
+document.addEventListener("keydown", (evenement) => {
+  if (evenement.key === "Escape" && cible) { cible = null; rendre(); }
+});
+
+rafraichir();
+setInterval(rafraichir, 600);
+</script>
+</body>
+</html>

@@ -130,7 +130,8 @@ jamais fusionnés par défaut.
 
 | Commande | Rôle |
 |---|---|
-| `traque` | **écoute permanente et jauge chaud/froid pour trouver un appareil** |
+| `interface` | **écoute permanente avec affichage graphique dans le navigateur** |
+| `traque` | la même chose dans le terminal, pour qui préfère |
 | `demo` | analyse un scénario simulé, sans matériel |
 | `scan` | scan BLE en direct, avec position et enregistrement |
 | `analyse` | rejoue les observations enregistrées (`--since`, `--session`) |
@@ -144,7 +145,41 @@ jamais fusionnés par défaut.
 Toutes les commandes d'analyse acceptent `--json`, `--out-json FICHIER`,
 `--out-html FICHIER`, `--all` et `--limit`.
 
-### Traque en temps réel
+### Interface graphique
+
+C'est la façon la plus simple d'utiliser l'outil. Une page s'ouvre dans
+votre navigateur et se met à jour toute seule pendant que vous vous
+déplacez.
+
+```bash
+python -m gps_signal_detector interface --demo    # sans matériel, pour voir
+python -m gps_signal_detector interface           # écoute réelle
+```
+
+Le serveur est local (`127.0.0.1`) et la page ne charge aucune ressource
+extérieure : rien ne sort de votre machine.
+
+**Aucun jargon à l'écran.** Le signal est exprimé en pourcentage, pas en
+dBm ; les traceurs portent des noms courants (« Traceur Apple AirTag »,
+« Réseau Tile ») plutôt que leurs identifiants internes ; la tendance se lit
+en toutes lettres (« Vous vous rapprochez »). Les valeurs brutes restent
+accessibles sous le repli **Détails techniques**, pour qui les veut.
+
+Deux écrans :
+
+1. **La liste** — tout ce qui émet autour de vous, du plus proche au plus
+   loin, avec une pastille d'alerte sur les traceurs identifiés et une
+   phrase d'explication quand un objet signale sa position à distance.
+2. **La recherche** — un grand pourcentage, une jauge, la tendance en
+   couleur, la courbe de la dernière minute, et le bouton **Marquer cet
+   endroit** qui relève votre position pour retrouver la zone la plus
+   chaude.
+
+Le code couleur ne compte que trois niveaux — bleu, orange, rouge — et
+chacun est toujours accompagné de son texte : la couleur ne porte jamais
+seule le sens, y compris pour un œil daltonien.
+
+### Traque en temps réel (terminal)
 
 Les autres commandes répondent à « suis-je suivi ? ». Celle-ci répond à
 « **où est-il ?** ». Le scan tourne en continu, l'écran se rafraîchit
@@ -267,9 +302,10 @@ Mettez-vous en lieu sûr avant d'inspecter, exportez le rapport horodaté
 python -m unittest discover -s gps_signal_detector/tests -t .
 ```
 
-171 tests, bibliothèque standard uniquement (le test d'analyse spectrale se
+204 tests, bibliothèque standard uniquement (le test d'analyse spectrale se
 saute tout seul si numpy est absent). Le rendu du mode traque produit des
-lignes pures, ce qui le rend vérifiable sans terminal.
+lignes pures et la traduction de l'interface web est une fonction pure : les
+deux se vérifient sans terminal ni navigateur.
 
 | Fichier | Rôle |
 |---|---|
@@ -278,6 +314,8 @@ lignes pures, ce qui le rend vérifiable sans terminal.
 | `signatures.py` | base de signatures BLE et décodage Find My |
 | `tracking_analyzer.py` | moteur de décision et recollage des identités |
 | `live_state.py` | état temps réel : lissage, tendance, bandes de proximité |
+| `web_ui.py` | traduction en langage courant et serveur de l'interface |
+| `web/index.html` | la page : liste, recherche, courbe (aucune ressource externe) |
 | `hunt_view.py` | rendu du mode traque (lignes pures, testables) |
 | `hunt.py` | boucle temps réel et affichage curses |
 | `ble_scanner.py` | acquisition BLE (bleak) |

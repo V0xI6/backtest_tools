@@ -19,9 +19,12 @@ rapproche » est fiable ; « il est à 2,3 m » ne l'est pas.
 
 from __future__ import annotations
 
+import math
 import statistics
+import threading
 from collections import deque
 from dataclasses import dataclass, field
+from typing import Sequence
 
 from .models import BleObservation, TrackerSignature
 from .signatures import identify
@@ -50,6 +53,18 @@ PROXIMITY_BANDS: tuple[tuple[float, str, str], ...] = (
 )
 FAR_BAND = ("LIMITE DE PORTÉE", "au-delà de 30 mètres")
 
+# Bornes de l'échelle de signal. En dessous de -100 dBm on ne reçoit plus
+# rien d'exploitable ; au-dessus de -35 le récepteur sature et les derniers
+# centimètres cessent de se distinguer — une limite du RSSI, pas du code.
+SIGNAL_FLOOR = -100.0
+SIGNAL_CEILING = -35.0
+
+
+def signal_ratio(rssi: float) -> float:
+    """Ramène une puissance en dBm sur une échelle de 0 à 1."""
+    span = SIGNAL_CEILING - SIGNAL_FLOOR
+    return max(0.0, min(1.0, (rssi - SIGNAL_FLOOR) / span))
+
 # Paliers de tendance, en dB sur la fenêtre de lissage.
 TREND_LEVELS: tuple[tuple[float, str, str], ...] = (
     (3.0, "▲▲▲  VOUS CHAUFFEZ", "hot"),
@@ -58,6 +73,68 @@ TREND_LEVELS: tuple[tuple[float, str, str], ...] = (
     (-3.0, "▼    ça descend", "cool"),
 )
 TREND_FALLING = ("▼▼▼  vous refroidissez", "cold")
+
+
+def bucketed_series(
+    samples: Sequence[tuple[float, int]],
+    now: float,
+    window_s: float,
+    buckets: int,
+) -> list[float | None]:
+    """Découpe l'historique en colonnes de temps égales.
+
+    Les trames n'arrivent pas à cadence régulière : chaque colonne prend la
+    médiane des mesures qu'elle contient. Les trous courts sont comblés par
+    la dernière valeur connue — sans quoi un émetteur lent (un AirTag, deux
+    secondes entre deux trames) donnerait une courbe en pointillé illisible.
+    Un silence réel, lui, reste un trou : c'est une information.
+
+    Partagé par l'affichage terminal et l'interface web, pour que les deux
+    racontent exactement la même chose.
+    """
+    if buckets <= 0:
+        return []
+
+    grouped: list[list[int]] = [[] for _ in range(buckets)]
+    times: list[float] = []
+    start = now - window_s
+    for timestamp, rssi in samples:
+        if timestamp < start or timestamp > now:
+            continue
+        index = int((timestamp - start) / window_s * buckets)
+        grouped[max(0, min(buckets - 1, index))].append(rssi)
+        times.append(timestamp)
+
+    values: list[float | None] = [
+        statistics.median(bucket) if bucket else None for bucket in grouped
+    ]
+    if not any(value is not None for value in values):
+        return values
+
+    intervals = [
+        later - earlier for earlier, later in zip(times, times[1:]) if later > earlier
+    ]
+    if intervals:
+        typical = statistics.median(intervals)
+        max_hold = max(1, math.ceil(3 * typical / window_s * buckets))
+    else:
+        max_hold = 1
+
+    filled: list[float | None] = []
+    held: float | None = None
+    holding = 0
+    for value in values:
+        if value is not None:
+            filled.append(value)
+            held = value
+            holding = 0
+        elif held is not None and holding < max_hold:
+            filled.append(held)
+            holding += 1
+        else:
+            filled.append(None)
+            held = None
+    return filled
 
 
 def proximity_band(rssi: float) -> tuple[str, str]:
@@ -133,6 +210,9 @@ class LiveDevice:
             self.separated = True
         if identity.battery:
             self.battery = identity.battery
+        # Le meilleur signal se suit à la mesure, pas à l'affichage : les deux
+        # interfaces doivent voir le même repère.
+        self.update_best(observation.timestamp)
 
     def values_between(self, start: float, stop: float) -> list[int]:
         return [rssi for timestamp, rssi in self.samples if start <= timestamp <= stop]
@@ -242,28 +322,34 @@ class LiveState:
         self.forget_after_s = forget_after_s
         self.total_observations = 0
         self.started_at: float | None = None
+        # L'acquisition écrit depuis la boucle d'événements, l'interface web
+        # lit depuis les fils du serveur HTTP : sans verrou, une insertion
+        # pendant un parcours ferait tomber la page.
+        self.lock = threading.RLock()
 
     def record(self, observation: BleObservation) -> LiveDevice:
-        if self.started_at is None:
-            self.started_at = observation.timestamp
-        device = self.devices.get(observation.address)
-        if device is None:
-            device = LiveDevice(address=observation.address)
-            self.devices[observation.address] = device
-        device.record(observation)
-        self.total_observations += 1
-        return device
+        with self.lock:
+            if self.started_at is None:
+                self.started_at = observation.timestamp
+            device = self.devices.get(observation.address)
+            if device is None:
+                device = LiveDevice(address=observation.address)
+                self.devices[observation.address] = device
+            device.record(observation)
+            self.total_observations += 1
+            return device
 
     def prune(self, now: float) -> int:
         """Oublie les appareils muets depuis trop longtemps."""
-        expired = [
-            address
-            for address, device in self.devices.items()
-            if device.age(now) > self.forget_after_s
-        ]
-        for address in expired:
-            del self.devices[address]
-        return len(expired)
+        with self.lock:
+            expired = [
+                address
+                for address, device in self.devices.items()
+                if device.age(now) > self.forget_after_s
+            ]
+            for address in expired:
+                del self.devices[address]
+            return len(expired)
 
     def ranked(self, now: float, trackers_only: bool = False) -> list[LiveDevice]:
         """Appareils triés du signal le plus fort au plus faible.
@@ -271,7 +357,8 @@ class LiveState:
         Les appareils devenus muets basculent en fin de liste : ils ne sont
         plus exploitables pour une recherche en cours.
         """
-        devices = list(self.devices.values())
+        with self.lock:
+            devices = list(self.devices.values())
         if trackers_only:
             devices = [device for device in devices if device.signature is not None]
 
@@ -292,10 +379,10 @@ class LiveState:
         inopérante. C'est le comportement par défaut de CoreBluetooth sur
         macOS quand l'option « AllowDuplicates » n'est pas active.
         """
-        if not self.devices:
+        with self.lock:
+            devices = list(self.devices.values())
+        if not devices:
             return 0.0
-        counts = [
-            len(device.values_between(now - window_s, now)) for device in self.devices.values()
-        ]
+        counts = [len(device.values_between(now - window_s, now)) for device in devices]
         active = [count for count in counts if count]
         return statistics.fmean(active) if active else 0.0

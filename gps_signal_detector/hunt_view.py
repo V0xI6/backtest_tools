@@ -8,25 +8,26 @@ rien de faux.
 
 from __future__ import annotations
 
-import math
-import statistics
 from dataclasses import dataclass
 
 from .live_state import (
     HISTORY_WINDOW_S,
+    SIGNAL_CEILING,
+    SIGNAL_FLOOR,
     LiveDevice,
     LiveState,
+    bucketed_series,
     proximity_band,
+    signal_ratio,
     trend_label,
 )
 
 BLOCKS = "▁▂▃▄▅▆▇█"
 
-# Bornes d'affichage de la jauge. En dessous de -100 dBm on ne reçoit plus
-# rien d'exploitable, au-dessus de -35 le récepteur sature : les derniers
-# centimètres ne se distinguent plus, c'est une limite du RSSI.
-GAUGE_FLOOR = -100.0
-GAUGE_CEILING = -35.0
+# L'échelle est définie dans live_state : terminal et interface web doivent
+# placer le curseur au même endroit pour la même mesure.
+GAUGE_FLOOR = SIGNAL_FLOOR
+GAUGE_CEILING = SIGNAL_CEILING
 
 
 @dataclass(frozen=True)
@@ -53,8 +54,7 @@ def gauge(ratio: float, width: int, marker_ratio: float | None = None) -> str:
 
 def gauge_ratio(rssi: float) -> float:
     """Position d'une puissance sur la jauge, entre 0 et 1."""
-    span = GAUGE_CEILING - GAUGE_FLOOR
-    return max(0.0, min(1.0, (rssi - GAUGE_FLOOR) / span))
+    return signal_ratio(rssi)
 
 
 def sparkline(
@@ -74,22 +74,10 @@ def sparkline(
     """
     if width <= 0:
         return ""
-    buckets: list[list[int]] = [[] for _ in range(width)]
-    times: list[float] = []
-    start = now - window_s
-    for timestamp, rssi in samples:
-        if timestamp < start or timestamp > now:
-            continue
-        index = int((timestamp - start) / window_s * width)
-        buckets[max(0, min(width - 1, index))].append(rssi)
-        times.append(timestamp)
-
-    values = [statistics.median(bucket) if bucket else None for bucket in buckets]
+    values = bucketed_series(samples, now, window_s, width)
     present = [value for value in values if value is not None]
     if not present:
         return " " * width
-
-    values = _hold_short_gaps(values, times, window_s, width)
 
     floor = low if low is not None else min(present)
     ceiling = high if high is not None else max(present)
@@ -103,41 +91,6 @@ def sparkline(
         level = int(round((value - floor) / span * (len(BLOCKS) - 1)))
         cells.append(BLOCKS[max(0, min(len(BLOCKS) - 1, level))])
     return "".join(cells)
-
-
-def _hold_short_gaps(
-    values: list[float | None], times: list[float], window_s: float, width: int
-) -> list[float | None]:
-    """Prolonge la dernière valeur au travers des trous courts.
-
-    Un AirTag n'émet que toutes les deux secondes : sur soixante colonnes,
-    une sur deux serait vide et la courbe deviendrait un pointillé illisible.
-    On comble donc les interruptions plus brèves que trois intervalles
-    d'émission. Au-delà, le trou est réel — l'appareil s'est tu — et il doit
-    rester visible : c'est une information, pas un défaut d'affichage.
-    """
-    intervals = [later - earlier for earlier, later in zip(times, times[1:]) if later > earlier]
-    if intervals:
-        typical = statistics.median(intervals)
-        max_hold = max(1, math.ceil(3 * typical / window_s * width))
-    else:
-        max_hold = 1
-
-    filled: list[float | None] = []
-    held: float | None = None
-    holding = 0
-    for value in values:
-        if value is not None:
-            filled.append(value)
-            held = value
-            holding = 0
-        elif held is not None and holding < max_hold:
-            filled.append(held)
-            holding += 1
-        else:
-            filled.append(None)
-            held = None
-    return filled
 
 
 def _identity_line(device: LiveDevice) -> str:
