@@ -1,0 +1,21 @@
+# Détecteur de traceurs GPS
+#
+# Le cœur du détecteur (analyse, décision, rapports, commande « demo »)
+# n'utilise QUE la bibliothèque standard : rien à installer pour l'essayer.
+#
+#     python -m gps_signal_detector demo
+#
+# Les dépendances ci-dessous ne servent qu'à l'acquisition sur du matériel
+# réel. Installez seulement celles dont vous avez besoin.
+
+# --- Scan BLE : indispensable pour détecter AirTag, Tile, SmartTag, FMDN.
+bleak>=0.21
+
+# --- Position par récepteur GPS sur port série.
+#     Inutile si vous passez par gpsd ou une position fixe.
+pyserial>=3.5
+
+# --- Balayage RF des bandes montantes cellulaires (clé RTL-SDR).
+#     Demande aussi les pilotes librtlsdr de votre distribution.
+pyrtlsdr>=0.2.93
+numpy>=1.21
