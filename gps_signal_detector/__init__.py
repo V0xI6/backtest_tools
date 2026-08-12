@@ -19,6 +19,8 @@ Utilisation en bibliothèque :
 
 from .geo import cluster_positions, haversine, path_length
 from .gnss_monitor import GnssConfig, GnssMonitor, GnssStatus, GnssVerdict
+from .hunt_view import render_hunt, render_picker
+from .live_state import LiveDevice, LiveState, proximity_band, trend_label
 from .models import (
     BleObservation,
     Criterion,
@@ -40,7 +42,7 @@ from .tracking_analyzer import (
     link_identities,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
     "BleObservation",
@@ -52,6 +54,8 @@ __all__ = [
     "GnssMonitor",
     "GnssStatus",
     "GnssVerdict",
+    "LiveDevice",
+    "LiveState",
     "SIGNATURES",
     "SafeZone",
     "ThreatLevel",
@@ -67,8 +71,12 @@ __all__ = [
     "identify_track",
     "link_identities",
     "path_length",
+    "proximity_band",
     "render_html",
+    "render_hunt",
     "render_json",
+    "render_picker",
     "render_text",
     "summarise",
+    "trend_label",
 ]

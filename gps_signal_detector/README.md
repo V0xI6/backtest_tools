@@ -130,6 +130,7 @@ jamais fusionnés par défaut.
 
 | Commande | Rôle |
 |---|---|
+| `traque` | **écoute permanente et jauge chaud/froid pour trouver un appareil** |
 | `demo` | analyse un scénario simulé, sans matériel |
 | `scan` | scan BLE en direct, avec position et enregistrement |
 | `analyse` | rejoue les observations enregistrées (`--since`, `--session`) |
@@ -142,6 +143,61 @@ jamais fusionnés par défaut.
 
 Toutes les commandes d'analyse acceptent `--json`, `--out-json FICHIER`,
 `--out-html FICHIER`, `--all` et `--limit`.
+
+### Traque en temps réel
+
+Les autres commandes répondent à « suis-je suivi ? ». Celle-ci répond à
+« **où est-il ?** ». Le scan tourne en continu, l'écran se rafraîchit
+plusieurs fois par seconde, et rien n'est à relancer : vous déplacez
+l'ordinateur et vous regardez la jauge.
+
+```bash
+python -m gps_signal_detector traque --demo    # sans matériel, pour voir
+python -m gps_signal_detector traque           # écoute réelle
+```
+
+Vous obtenez d'abord la liste des appareils entendus, classés par puissance.
+Vous en choisissez un, et l'écran de traque affiche la puissance lissée, une
+jauge, la tendance (**vous chauffez / vous refroidissez**), la bande de
+proximité et la courbe des soixante dernières secondes.
+
+| Touche | Effet |
+|---|---|
+| `↑` `↓` | choisir un appareil |
+| `entrée` | lancer la traque |
+| `m` | relever un point à l'endroit où vous êtes |
+| `r` | recalibrer (changement de pièce ou de véhicule) |
+| `tab` | appareil suivant |
+| `q` | retour à la liste, puis quitter |
+
+**La méthode.** Ne cherchez pas à lire une position sur l'écran, il n'y en a
+pas. Balayez lentement la zone et regardez la tendance : c'est le
+rapprochement qui vous renseigne, pas la valeur absolue. Aux endroits
+intéressants, appuyez sur `m` : la liste des points relevés vous donne la
+zone la plus chaude, ce qui remplace la direction que la radio ne fournit
+pas.
+
+**Trois limites à connaître**, sinon vous chercherez au mauvais endroit :
+
+- **Aucune direction.** Une antenne unique ne mesure pas d'angle. L'outil ne
+  vous dira jamais « à gauche » — d'où les points relevés, qui sont une
+  triangulation à la main.
+- **Aucune précision centimétrique.** Elle demanderait de l'UWB (la puce U1
+  d'un iPhone), qu'aucun ordinateur ne possède. Le RSSI se trompe couramment
+  de 50 à 100 % en distance absolue ; il n'est fiable qu'en *variation*. Et
+  très près, il sature : les derniers centimètres sont les plus difficiles.
+- **La cadence d'émission borne la réactivité.** Un AirTag n'émet que toutes
+  les deux secondes ; la jauge ne peut pas être plus rapide que lui. Bougez
+  lentement.
+
+**Si l'écran affiche l'avertissement « votre plateforme déduplique les
+annonces »**, c'est que le système ne signale chaque appareil qu'une fois et
+que le RSSI ne bougera jamais. C'est le comportement de CoreBluetooth sur
+macOS quand l'option `AllowDuplicates` n'est pas active. Relancez ainsi :
+
+```bash
+python -m gps_signal_detector traque --restart-scan 2
+```
 
 ### Balayage RF
 
@@ -211,8 +267,9 @@ Mettez-vous en lieu sûr avant d'inspecter, exportez le rapport horodaté
 python -m unittest discover -s gps_signal_detector/tests -t .
 ```
 
-117 tests, bibliothèque standard uniquement (le test d'analyse spectrale se
-saute tout seul si numpy est absent).
+171 tests, bibliothèque standard uniquement (le test d'analyse spectrale se
+saute tout seul si numpy est absent). Le rendu du mode traque produit des
+lignes pures, ce qui le rend vérifiable sans terminal.
 
 | Fichier | Rôle |
 |---|---|
@@ -220,6 +277,9 @@ saute tout seul si numpy est absent).
 | `geo.py` | distances, regroupement en zones, longueur de trajet |
 | `signatures.py` | base de signatures BLE et décodage Find My |
 | `tracking_analyzer.py` | moteur de décision et recollage des identités |
+| `live_state.py` | état temps réel : lissage, tendance, bandes de proximité |
+| `hunt_view.py` | rendu du mode traque (lignes pures, testables) |
+| `hunt.py` | boucle temps réel et affichage curses |
 | `ble_scanner.py` | acquisition BLE (bleak) |
 | `position.py` | sources de position : NMEA, gpsd, fixe |
 | `gnss_monitor.py` | analyse NMEA, brouillage et leurrage |

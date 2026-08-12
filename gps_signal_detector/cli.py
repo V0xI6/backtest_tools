@@ -145,6 +145,24 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_traque(args: argparse.Namespace) -> int:
+    """Traque temps réel : le signal monte quand on se rapproche."""
+    from .ble_scanner import ScannerUnavailable
+    from .hunt import run_hunt
+
+    try:
+        return run_hunt(
+            demo=args.demo,
+            address=args.address,
+            adapter=args.adapter,
+            restart_scan_s=args.restart_scan,
+            seed=args.seed,
+        )
+    except (ScannerUnavailable, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+
 def cmd_analyse(args: argparse.Namespace) -> int:
     """Analyse les observations déjà enregistrées."""
     with Database(args.db) as database:
@@ -355,6 +373,26 @@ def build_parser() -> argparse.ArgumentParser:
     add_db_option(scan)
     add_output_options(scan)
     scan.set_defaults(func=cmd_scan)
+
+    traque = subparsers.add_parser(
+        "traque",
+        help="traque temps réel dans le terminal : le signal monte quand on approche",
+    )
+    traque.add_argument(
+        "--demo", action="store_true", help="scénario simulé, sans matériel Bluetooth"
+    )
+    traque.add_argument("--address", help="traquer directement cette adresse")
+    traque.add_argument("--adapter", help="adaptateur Bluetooth (ex. hci0)")
+    traque.add_argument(
+        "--restart-scan",
+        type=float,
+        default=0.0,
+        metavar="SECONDES",
+        help="relance le scan périodiquement ; à activer si l'écran signale "
+        "que la plateforme déduplique les annonces",
+    )
+    traque.add_argument("--seed", type=int, default=42)
+    traque.set_defaults(func=cmd_traque)
 
     analyse = subparsers.add_parser("analyse", help="analyse les données enregistrées")
     analyse.add_argument("--session", type=int, help="identifiant de session")
